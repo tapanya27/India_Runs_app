@@ -1,0 +1,7 @@
+Senior Machine Learning Engineer with 7 years of experience building NLP and recommendation systems.
+
+Led development of production LLM applications using PyTorch, HuggingFace Transformers, FAISS, and Sentence Transformers. Built Retrieval-Augmented Generation systems serving over 2 million users.
+
+Experience deploying ML services on AWS using Docker and Kubernetes. Designed semantic search pipelines and vector databases for enterprise knowledge retrieval.
+
+Strong Python background with expertise in model optimization and distributed inference.
