@@ -1,0 +1,22 @@
+Name,Experience,Skills,Resume
+Sarah Chen,7,"Python,PyTorch,Transformers,LLMs,RAG,FAISS,AWS,Docker,Kubernetes","Senior Machine Learning Engineer with 7 years experience building NLP systems, recommendation engines, semantic search platforms and Retrieval-Augmented Generation systems. Built enterprise AI products using PyTorch, HuggingFace, FAISS and AWS. Deployed large scale AI services using Docker and Kubernetes."
+
+Alex Morgan,5,"Python,Neural Retrieval,Conversational AI,Dense Embeddings","Machine Learning Engineer specializing in dense retrieval architectures, neural embeddings and ranking systems. Built conversational assistants capable of retrieving organizational knowledge and generating contextual answers. Developed vector search infrastructure and semantic retrieval systems."
+
+Dr Robert Wilson,15,"Python,PyTorch,Transformers,NLP,Information Retrieval","Principal AI Scientist with 15 years experience. Designed enterprise retrieval systems, recommendation engines and large-scale search infrastructure. Led research and production deployment of transformer-based NLP systems."
+
+Daniel Kim,6,"Python,Ranking Systems,Recommendation Systems,Retrieval","Search Relevance Engineer with 6 years experience building candidate ranking algorithms, recommendation systems, semantic matching engines and vector search infrastructure. Improved search relevance for millions of users."
+
+Surya Teja Menta,4,"Python,PyTorch,TensorFlow,RAG,LangChain,HuggingFace,AWS,Docker","Senior Data Scientist experienced in RAG pipelines, LLM fine-tuning, LangChain, HuggingFace and Vector Databases. Built AI-powered retrieval systems, semantic search solutions and production ML applications."
+
+Priya Kapoor,6,"Python,Embeddings,Chatbots,Backend Development","Software Engineer who transitioned into AI. Built retrieval-based question answering systems, embedding-powered search applications and intelligent chatbot platforms. Experience with Python and vector search."
+
+Emily Rodriguez,5,"Python,TensorFlow,NLP,Machine Learning","Data Scientist with experience in predictive analytics, forecasting models, NLP applications and machine learning pipelines. Limited experience in retrieval systems and production deployment."
+
+Michael Brown,9,"Java,AWS,Docker,Kubernetes,System Design","Backend Engineer with extensive cloud and distributed systems experience. Built scalable infrastructure and microservices. Worked alongside AI teams but has limited machine learning experience."
+
+John Doe,0.5,"Python,LLM,RAG,FAISS,Transformers","Completed an online AI course. Familiar with Python, LLMs, RAG, FAISS and Transformers but lacks production experience."
+
+Sophia Lee,7,"React,TypeScript,JavaScript,CSS","Frontend Engineer focused on React applications, dashboard systems and user interfaces. No significant machine learning or AI experience."
+
+Rahul Sharma,0,"Python,Machine Learning,Data Analysis","Recent Computer Science graduate with academic machine learning projects and internship experience in Python development."

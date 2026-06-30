@@ -1,0 +1,406 @@
+================================================================================
+TECHNICAL_DETAILS.txt
+Redrob AI — Intelligent Candidate Discovery & Ranking
+Full technical reference: architecture, pipeline, every file, and the exact math.
+================================================================================
+
+--------------------------------------------------------------------------------
+0. PROBLEM STATEMENT
+--------------------------------------------------------------------------------
+Input : 1 Job Description (Senior AI Engineer @ Redrob AI) + a pool of 100,000
+        candidates (resources/candidates.jsonl).
+Output: submission.csv ranking the TOP 100 candidates, best-fit first, with a
+        1-2 sentence reasoning per candidate.
+Constraints (resources/submission_spec):
+        Ranking step <= 5 min wall-clock, <= 16 GB RAM, CPU only, no network,
+        <= 5 GB disk. Format validated by resources/validate_submission.py.
+Core difficulty: the dataset contains TRAPS — keyword stuffers (unrelated roles
+        listing AI skills), behavioral twins, and ~80 honeypots (impossible
+        profiles). A naive embedding/keyword matcher ranks the traps highly and
+        is disqualified (honeypot rate > 10% in top 100).
+
+
+--------------------------------------------------------------------------------
+1. HIGH-LEVEL ARCHITECTURE (two stages)
+--------------------------------------------------------------------------------
+STAGE A — BUILD ONCE  (build_index.py):
+   candidates.jsonl
+     -> build_candidate_text(c)               (signal-dense text per candidate)
+     -> SentenceTransformer.encode            (all-MiniLM-L6-v2, 384-d, L2-norm)
+     -> faiss.IndexFlatIP(384)                (inner product on normalized = cosine)
+     -> write candidate_index.faiss + candidate_map.pkl
+
+STAGE B — RANK PER JD  (rank.py / app.py -> challenge_ranker.rank_candidates_challenge):
+   JD text
+     -> embed_text(JD)                        (same model)
+     -> FAISS search -> top 700               (recall pool; FAISS_RETRIEVE)
+     -> cross-encoder rerank of the 700       (precision; ms-marco-MiniLM-L-6-v2)
+     -> 6-component weighted score on the 700
+     -> multiplicative modifiers (honeypot / consulting / role-fit / India)
+     -> sort by (score desc, candidate_id asc) -> top 100
+     -> monotonic clamp + rank assignment
+     -> reasoning string per candidate
+     -> submission.csv
+
+
+--------------------------------------------------------------------------------
+2. MODELS & KEY CONSTANTS
+--------------------------------------------------------------------------------
+Embedding (bi-encoder) : all-MiniLM-L6-v2          (output dim = 384)
+Cross-encoder (reranker): cross-encoder/ms-marco-MiniLM-L-6-v2
+Both run locally on CPU (no API, no GPU). Chosen over all-mpnet-base-v2 because
+mpnet measured ~1.4 texts/sec here (~20 h for 100k) — infeasible and against the
+spec's CPU/5-min intent. MiniLM-L6 is ~15x faster with strong quality, and is the
+"compact local model" the spec recommends.
+
+challenge_ranker.py constants:
+   FAISS_RETRIEVE = 700          # recall pool retrieved before reranking/scoring
+   FINAL_TOP      = 100          # rows in the submission
+   USE_CROSS_ENCODER = True
+   CE_BLEND = 0.55              # semantic = 0.55*cross_encoder + 0.45*faiss_cosine
+   Weights: W_SEMANTIC .35  W_SKILL .30  W_EXPERIENCE .15
+            W_PROJECT  .10  W_EDUCATION .03  W_REDROB    .07   (sum = 1.0)
+   TODAY = date(2026, 6, 25)    # reference date for "recency" signals
+
+config.py constants:
+   EMBEDDING_DIM = 384
+   CE_SIGMOID_SCALE = 1.1                        # logits -> (0,1) via sigmoid
+   SKILL_STRONG_MATCH_THRESHOLD   = 0.75         # SBERT cosine
+   SKILL_PROBABLE_MATCH_THRESHOLD = 0.62
+   SKILL_CE_VALIDATION_THRESHOLD  = 0.45
+   SKILL_WEIGHT_EXACT=1.0 STRONG=1.0 PROBABLE=0.8 CATEGORY=0.5
+   SKILL_TAXONOMY_LABELS : 13 category labels (languages, web, backend, DB,
+       cloud, devops, AI/ML, data-eng, testing, security, analytics, mobile, VCS)
+   SKILL_ALIASES : alias->canonical map (NOTE: "cv" alias removed deliberately)
+   SKILL_KEYWORDS: curated tech keyword list used by extract_skills()
+   (Legacy, used only by the trashed 1-resume path: WEIGHT_SEMANTIC/SKILL/...,
+    CROSS_ENCODER_WEIGHT, WEIGHT_RECRUITABILITY, FAISS_TOP_K, FINAL_TOP_K.)
+
+build_index.py constants:
+   BATCH_SIZE = 128
+   MAX_TEXT_CHARS = 1100        # cap on each candidate's embedded text
+
+
+--------------------------------------------------------------------------------
+3. CANDIDATE DATA SCHEMA (fields actually used)
+--------------------------------------------------------------------------------
+Each line in candidates.jsonl is one candidate (see resources/candidate_schema.json):
+   candidate_id            "CAND_XXXXXXX" (7 digits)
+   profile{ anonymized_name, headline, summary, location, country,
+            years_of_experience, current_title, current_company,
+            current_company_size, current_industry }
+   career_history[]{ company, title, start_date, end_date, duration_months,
+            is_current, industry, company_size, description }
+   education[]{ institution, degree, field_of_study, start_year, end_year,
+            grade, tier(tier_1..tier_4/unknown) }
+   skills[]{ name, proficiency(beginner/intermediate/advanced/expert),
+            endorsements, duration_months }
+   certifications[], languages[]
+   redrob_signals{ 23 behavioral signals — completeness, last_active_date,
+            open_to_work_flag, recruiter_response_rate, interview_completion_rate,
+            github_activity_score, skill_assessment_scores{}, saved_by_recruiters_30d,
+            profile_views_received_30d, offer_acceptance_rate, notice_period_days,
+            verified_email/phone, linkedin_connected, avg_response_time_hours, ... }
+
+
+--------------------------------------------------------------------------------
+4. FILE-BY-FILE REFERENCE (kept / active files)
+--------------------------------------------------------------------------------
+
+build_index.py    — ONE-TIME index builder.
+   - UTF-8 stdout reconfigure (Windows-safe prints).
+   - Imports SBERT_MODEL, EMBEDDING_DIM from config (single source of truth).
+   - build_candidate_text(c): assembles, in order —
+        Name, headline, "Role: <title>", "Experience: <yoe> years",
+        "Experience Domain: <current_industry + up to 3 career industries>",
+        "Skills: name (proficiency, Nmo, K endorsements), ...",
+        summary[:300], "Certifications: ...",
+        up to 3 career roles "[title at company] description[:250]",
+        "Education: degree in field at institution (Tier N)",
+        "Platform: open to work; GitHub active (score); Assessed: ...".
+      Final string capped to MAX_TEXT_CHARS (1100).
+   - main(): torch.set_num_threads(cpu_count); loads jsonl; encodes texts
+     (normalize_embeddings=True, batch_size=128); faiss.IndexFlatIP(384);
+     writes candidate_index.faiss + candidate_map.pkl (the candidate list, same
+     order as the index).
+
+challenge_ranker.py   — THE CORE ENGINE.
+   load_index() -> (faiss.Index, list[dict])  reads the two artifact files.
+   Helpers: _skill_names, _skill_info, _all_company_names.
+   _candidate_ce_text(c): compact text for the cross-encoder (headline + title +
+       yoe + summary[:400] + top-20 skills + most-recent role desc[:300]).
+   _cross_encoder_rerank(jd, candidates, faiss_scores):
+       ce.predict([(jd[:1500], _candidate_ce_text(c)) ...], batch_size=64)
+       -> sigmoid -> blended[i] = CE_BLEND*ce + (1-CE_BLEND)*faiss_scores[i].
+   _honeypot_penalty(c) -> multiplier in [0,1]  (see section 6).
+   _consulting_penalty(c) -> {1.0, 0.80, 0.55}  (see section 6).
+   _india_boost(c) -> {1.0, 1.04}.
+   _role_fit_multiplier(c) -> [0.30, 1.0]  (anti keyword-stuffer; see section 6).
+   _score_skills_jd_aware(c, matcher) -> [0,1]  (section 5).
+   _score_experience(c, jd) -> [0,1].
+   _score_projects_batch(cands, jd_emb) -> [float]  (one batched encode).
+   _score_education(c) -> [0,1].
+   _score_redrob_comprehensive(c) -> [0,1]  (23 signals).
+   _build_reasoning(c, scores, jd_skills) -> str  (section 7).
+   rank_candidates_challenge(jd, index, all_candidates, top_k=100,
+       retrieve_k=700, use_cross_encoder=True) -> list[dict]  (section 8).
+   DEFAULT_JD: the canonical job description, imported by BOTH rank.py and app.py.
+
+rank.py    — CLI / reproduce command.
+   - UTF-8 stdout reconfigure.
+   - args: --candidates, --jd (file; else DEFAULT_JD), --out (submission.csv),
+     --top-k, --retrieve-k, --no-cross-encoder.
+   - load_index(); rank_candidates_challenge(...); write CSV
+     (candidate_id, rank, final_score, reasoning).
+   - validate_output(): inline subset of the official validator (header, 100
+     rows, unique ids/ranks, monotonic scores). Exits 1 if < top_k results.
+
+app.py    — Streamlit UI.
+   - @st.cache_resource loads the index ONCE at startup (never rebuilds).
+   - Sidebar: top_k, retrieve_k, "Cross-encoder rerank" checkbox, weights table,
+     quality-filter list.
+   - JD text area pre-filled with the shared DEFAULT_JD.
+   - "Rank Candidates" -> rank_candidates_challenge(...); shows metrics, a score
+     bar chart, the full ranking table (color-coded), per-candidate detail cards,
+     and an in-memory submission.csv download button.
+
+embedder.py    — shared model loader.
+   - get_model(): lazy SentenceTransformer(SBERT_MODEL) singleton; sets
+     torch.set_num_threads(cpu_count) on first load.
+   - embed_text(t), embed_batch(ts, batch=32): normalized float32 vectors.
+   - build_candidate_text(...) here is the LEGACY raw_text version (1-resume path).
+
+skill_matcher.py    — multi-layer semantic skill matching (section 5).
+   SemanticSkillMatcher(jd_skills, use_cross_encoder_validation=True):
+   Layer 1 normalize -> 2 exact -> 3 SBERT semantic (greedy, thresholds) ->
+   4 cross-encoder validation of "probable" matches (GATED; OFF in the challenge
+   path) -> 5 taxonomy category fallback. Embedding cache shared across calls.
+
+cross_encoder_reranker.py    — cross-encoder utilities.
+   get_cross_encoder() lazy CrossEncoder(CROSS_ENCODER_MODEL) singleton;
+   _sigmoid(x) with CE_SIGMOID_SCALE; rerank(...) is the legacy raw_text variant.
+   (challenge_ranker imports get_cross_encoder + _sigmoid from here.)
+
+resume_parser.py    — skills/JD text utilities (+ legacy OCR/PDF).
+   normalize_skill / normalize_skill_list (dedup + alias resolution),
+   extract_skills(text, include_noun_chunks): regex over SKILL_KEYWORDS/aliases,
+   plus spaCy noun chunks for resumes (noun chunks OFF for JD to avoid inflating
+   the skill set), extract_experience_domain, extract_education/projects, OCR/PDF
+   helpers (legacy, unused by the challenge path).
+
+config.py    — central config (models, dims, aliases, taxonomy, thresholds).
+
+resources/    — original challenge bundle (data, validator, docs). Untouched.
+
+
+--------------------------------------------------------------------------------
+5. SCORING — THE SIX COMPONENTS (each returns [0,1])
+--------------------------------------------------------------------------------
+(1) SEMANTIC (W=0.35)
+    Built in rank_candidates_challenge, not a standalone function:
+      faiss_cos = FAISS inner-product (cosine on normalized vectors)
+      norm_cos  = min-max normalize the 700 cosines to [0,1]
+      if cross-encoder on:
+          ce    = sigmoid(cross_encoder.predict(jd, candidate_text))
+          blend = 0.55*ce + 0.45*norm_cos
+      else blend = norm_cos
+      semantic  = rescale(blend) to [0.30, 1.00]  (min-max across the pool)
+
+(2) SKILL MATCH, JD-aware (W=0.30)   _score_skills_jd_aware
+      matches = SemanticSkillMatcher.match(normalized candidate skills)
+      base    = mean(weight[category])  with exact/strong=1.0, probable=0.8,
+                category=0.5, missing=0.0   (capped at 1.0)
+      required_bonus = min(0.20, required_hits/len(REQUIRED) * 0.20 * 3)
+      nice_bonus     = min(0.10, nice_hits/len(NICE) * 0.10 * 3)
+      proficiency    = mean over JD-relevant skills of
+                       (prof*0.5 + endorsements/50*0.3 + duration/60*0.2),
+                       capped 0.10   [prof: expert1.0 adv0.8 inter0.6 begin0.3]
+      skill = clamp(base*0.60 + required_bonus + nice_bonus + proficiency, 0, 1)
+
+(3) EXPERIENCE (W=0.15)   _score_experience
+      parse JD band -> (min=5, max=9)
+      in-band            -> 1.0
+      over  (yoe>max)    -> max(0.7, 1.0 - (yoe-max)*0.02)   slight over-qual penalty
+      under (0<yoe<min)  -> (yoe/min) ** 0.8                  under-qualified penalty
+      yoe == 0           -> 0.0
+
+(4) PROJECTS / CAREER (W=0.10)   _score_projects_batch  (BATCHED, one model call)
+      gather up to 5 career descriptions/candidate (each [:400] chars)
+      encode ALL at once -> cosine vs JD embedding
+      per role weight = 1/(position+1)  (recent roles weigh more)
+      candidate score = weighted mean of max(0, cosine), capped 1.0
+
+(5) EDUCATION (W=0.03)   _score_education
+      tier: t1=1.0 t2=0.80 t3=0.60 t4=0.40 unknown=0.30
+      degree bonus: phd .15 | mtech/me/ms/m.s .10 | msc/mca .08 | mba .05
+      field bonus : +0.05 if CS/IT/AI/ML/DS/ECE/EE
+      score = max over education entries of min(1.0, tier+degree+field);
+      no education -> 0.30
+
+(6) REDROB SIGNALS (W=0.07)   _score_redrob_comprehensive
+      weighted average of AVAILABLE signals (weights):
+        recruiter_response_rate .20 | interview_completion_rate .15 |
+        github_activity_score/100 .13 | avg skill_assessment/100 .10 |
+        open_to_work .10 | recency(last_active) .07 | completeness/100 .06 |
+        saved_by_recruiters/10 .05 | offer_acceptance .04 | notice_period .03 |
+        profile_views/50 .03 | verification(email/phone/linkedin) .02 |
+        response_speed .02
+      recency buckets: <=30d 1.0 | <=90d .75 | <=180d .50 | <=365d .30 | else .10
+      no signals -> 0.40
+
+
+--------------------------------------------------------------------------------
+6. MODIFIERS (multiplicative on the weighted sum)
+--------------------------------------------------------------------------------
+raw = W_SEM*sem + W_SKILL*skill + W_EXP*exp + W_PROJ*proj + W_EDU*edu + W_RED*redrob
+final = clamp( raw * honeypot_mult * consult_mult * role_mult * india_mult , 0, 1)
+
+HONEYPOT  _honeypot_penalty  (start 1.0, multiply):
+   total_career_months > yoe*12*1.5         -> *0.6   (overlapping/impossible tenure)
+   >=5 skills "expert/advanced" with 0 mo   -> *0.5   (>=3 -> *0.75)
+   >=3 skills with duration > total career  -> *0.4   (impossible skill age)
+   >=10 skills marked "expert"              -> *0.7   (keyword stuffer)
+
+CONSULTING  _consulting_penalty:
+   consulting_months/total_months >=0.95 -> 0.55 | >=0.70 -> 0.80 | else 1.0
+   (consulting set: tcs, infosys, wipro, accenture, cognizant, hcl, capgemini,
+    tech mahindra, mphasis, hexaware)
+
+ROLE-FIT  _role_fit_multiplier  (ANTI KEYWORD-STUFFER TRAP — the key defense):
+   Classify role ONLY from current_title + career-history TITLES (never headline
+   or skills list — those are gamed by stuffers):
+        strong title (ai/ml/nlp/data scientist/...)      fit = 1.00
+        good title   (software/backend/data eng/dev/...)  fit = 0.80
+        strong/good in a PAST role                        fit = 0.62
+        weak title   (hr/civil/mechanical/sales/...)      fit = 0.16
+        otherwise                                         fit = 0.50
+   Career-DESCRIPTION evidence (rag/retrieval/recommendation/embedding/nlp/...):
+        >=2 hits -> fit += 0.22 ;  ==1 -> fit += 0.10
+   Lazy-stuffer rule: fit<=0.25 AND >=4 AI core skills AND 0 career evidence
+        -> fit *= 0.5
+   multiplier = 0.30 + 0.70*fit       (range [0.30, 1.0])
+
+INDIA BOOST  _india_boost:
+   country contains "india" OR location contains pune/noida -> 1.04 else 1.0
+
+
+--------------------------------------------------------------------------------
+7. REASONING GENERATION  _build_reasoning
+--------------------------------------------------------------------------------
+Builds one specific, non-templated line per candidate (pipe-separated), with:
+   "<title>, <yoe> yrs exp, <location>"
+   "core JD skills: ..."  (matched JD-required) OR "top skills: ..." fallback
+   "bonus: ..."           (matched nice-to-have)
+   "relevant work at <company>: <terms found in career descriptions>"
+                          OR "currently at <company>"
+   "edu: <degree> <field> (Tier N)"
+   recruiter signals: "response rate X%; interview completion Y%; GitHub score Z;
+                       open to work"
+   "gaps: ..."            honest gaps (role/title not aligned; limited experience;
+                          few direct JD skill matches; not open to work)
+This satisfies the Stage-4 reasoning checks: specific facts, JD connection,
+honest concerns, variation, and no hallucination (skills referenced exist in the
+profile; verified 0 hallucinated rows in the current submission).
+
+
+--------------------------------------------------------------------------------
+8. RANKING / ORDERING / TIE-BREAK / MONOTONICITY
+--------------------------------------------------------------------------------
+rank_candidates_challenge:
+   1. jd_emb = embed_text(JD)
+   2. faiss search, k = min(retrieve_k, index.ntotal)  -> (candidate, cosine) x700
+   3. min-max normalize cosines; optional cross-encoder rerank -> blended;
+      rescale blended -> [0.30, 1.0] = semantic component
+   4. jd_skills = extract_skills(JD, include_noun_chunks=False)
+      matcher = SemanticSkillMatcher(jd_skills, use_cross_encoder_validation=False)
+   5. project_scores = _score_projects_batch(...)   (one batched encode)
+   6. per candidate: compute 6 components -> raw -> apply 4 modifiers -> final
+   7. SORT once: key = (-final_score, candidate_id)   [score desc, id ASC]
+      then slice top_k   <-- ordering applied BEFORE slicing so the rank-100
+      boundary keeps the correct (smallest-id) tied candidate (spec tie-break).
+   8. monotonic clamp: walk the list; if a score exceeds the previous, lower it
+      to the previous (floating-point safety) so scores never increase by rank.
+   9. assign rank = 1..top_k.
+
+Output guarantees (match resources/validate_submission.py):
+   exactly 100 rows | header candidate_id,rank,score,reasoning | ranks 1..100
+   unique | candidate_ids unique & matching ^CAND_[0-9]{7}$ | score
+   non-increasing | equal scores ordered by candidate_id ascending.
+
+
+--------------------------------------------------------------------------------
+9. THE BUILD PROCESS (chunked + resumable)
+--------------------------------------------------------------------------------
+A one-shot build of 100k on this CPU (~90 min) exceeds the background-task reap
+window and is vulnerable to laptop sleep. The index was therefore built with a
+resumable chunked routine: encode in chunks of 5,000, save each chunk's
+embeddings to disk, skip already-present chunks on rerun, and only assemble the
+final FAISS index + candidate_map.pkl once all 20 chunks exist. Every chunk is a
+checkpoint, so an interrupted build resumes with zero lost work. Throughput on
+this machine: ~18-21 texts/sec (all 8 cores), ~200-235 s per 5k chunk.
+Artifacts: candidate_index.faiss (153.6 MB = 100000x384x4) , candidate_map.pkl
+(~417 MB).
+
+
+--------------------------------------------------------------------------------
+10. PERFORMANCE (this machine: 8-core CPU, 16 GB RAM, Python 3.13)
+--------------------------------------------------------------------------------
+   One-time index build : ~90 min (chunked, resumable)   [pre-computation]
+   Ranking step (per JD): ~145 s wall-clock incl. index load   [budget 300 s]
+        - FAISS search over 100k                 : sub-second
+        - cross-encoder rerank of 700            : dominant cost
+        - batched project re-encode (~hundreds)  : moderate
+        - skill matching (CE-validation OFF)      : light
+   Memory at rank time  : index 153 MB + map ~0.4-1.5 GB + models -> well under 16 GB
+   No GPU, no network during ranking.
+
+
+--------------------------------------------------------------------------------
+11. RELIABILITY / CORRECTNESS NOTES (from an adversarial code review)
+--------------------------------------------------------------------------------
+   - Tie-break fixed: ordering is applied BEFORE the top-100 slice so the
+     boundary keeps the spec-correct (smallest candidate_id) tied candidate.
+   - Per-candidate cross-encoder validation in skill matching is disabled in the
+     challenge path (it would add hundreds of unbatched model calls).
+   - rank.py fails fast (exit 1) instead of writing a <100-row CSV.
+   - Windows cp1252 console crash fixed (UTF-8 stdout in rank.py/build_index.py).
+   - "cv" -> "computer vision" alias removed (the JD's "...only CV..." line was
+     polluting the JD skill set).
+   - Defensive skill["name"] -> .get("name").
+
+
+--------------------------------------------------------------------------------
+12. OUTPUT FORMAT
+--------------------------------------------------------------------------------
+   File   : submission.csv (UTF-8)
+   Header : candidate_id,rank,score,reasoning
+   Rows   : exactly 100 data rows
+   rank   : integer 1..100, each once
+   score  : float, non-increasing as rank increases
+   reason : 1-2 sentence justification (specific, non-templated)
+   Validate: python resources/validate_submission.py submission.csv
+
+
+--------------------------------------------------------------------------------
+13. trash/  (moved out of the active project; recoverable)
+--------------------------------------------------------------------------------
+Legacy 1-JD-1-resume pipeline (NOT used by the challenge app):
+   ranker.py, scorer.py, explainer.py, faiss_index.py, api.py, sample_data.py,
+   tests/ (test_cases.py imported the old ranker).
+Scratch / debug / old artifacts:
+   repro.py, minimal_repro.py, script*.py, test_encode.py, candidate0/1.txt,
+   test_index.faiss, test_map.pkl, test_submission.csv, run*.txt, test1.txt,
+   steps.txt, run.bat, candidates.csv, sample_candidates.csv,
+   sample_job_description.txt, resources/*.extracted.txt.
+
+
+--------------------------------------------------------------------------------
+14. REPRODUCE
+--------------------------------------------------------------------------------
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+   python build_index.py                                   # one-time (~90 min)
+   python rank.py --out submission.csv                     # ~145 s
+   python resources/validate_submission.py submission.csv  # "Submission is valid."
+   streamlit run app.py                                    # interactive UI
+================================================================================

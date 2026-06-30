@@ -1,0 +1,79 @@
+# Redrob Hackathon — Submission Metadata
+# (filled from resources/submission_metadata_template.yaml)
+# Replace the <PLACEHOLDER> values before submitting via the portal.
+
+# ============================================================================
+# Team identity
+# ============================================================================
+team_name: "<YOUR-TEAM-NAME>"
+
+primary_contact:
+  name: "<PRIMARY CONTACT NAME>"
+  email: "samruddhi.pande@vgipl.in"
+  phone: "<+91-XXXXXXXXXX>"
+
+team_members:
+  - name: "<MEMBER 1 NAME>"
+    email: "samruddhi.pande@vgipl.in"
+    role: "ML Engineer"
+
+# ============================================================================
+# Code and reproducibility
+# ============================================================================
+github_repo: "<https://github.com/YOUR_USERNAME/YOUR_REPO>"
+
+sandbox_link: "<https://huggingface.co/spaces/YOUR_USERNAME/redrob-ranker>"
+
+# Two-step reproduce: build the index once (pre-computation), then rank.
+reproduce_command: "python build_index.py && python rank.py --candidates ./resources/candidates.jsonl --out ./submission.csv"
+
+# ============================================================================
+# Compute environment
+# ============================================================================
+compute:
+  platform: "Windows 11 Pro (local)"
+  cpu_cores: 8
+  ram_gb: 16
+  python_version: "3.13.7"
+  os: "Windows 11 Pro 10.0.26100"
+  uses_gpu_for_inference: false             # CPU-only ranking
+  has_network_during_ranking: false         # No API calls during ranking
+  pre_computation_required: true            # build_index.py precomputes the FAISS index
+  pre_computation_time_minutes: 90          # ~one-time 100k embedding build on CPU
+
+# ============================================================================
+# AI tools declaration
+# ============================================================================
+ai_tools_used:
+  - "Claude"
+
+ai_usage_summary: |
+  Used Claude (Claude Code) for code review, refactoring, and wiring the
+  cross-encoder reranking + hybrid scoring pipeline. No candidate data was
+  sent to any hosted LLM during ranking; the ranking step runs fully offline
+  on CPU using local sentence-transformer and cross-encoder models.
+
+# ============================================================================
+# Approach summary
+# ============================================================================
+methodology_summary: |
+  Two-stage retrieve-and-rerank ranker over a prebuilt FAISS index of all
+  100k candidates (all-MiniLM-L6-v2 embeddings of a signal-dense candidate
+  text). For a JD we retrieve the top 700 by dense similarity, rerank that
+  pool with a cross-encoder, then score each with six weighted components —
+  semantic (35%), JD-aware skill match (30%), experience fit (15%), project
+  relevance (10%), education (3%), and 23 Redrob behavioural signals (7%).
+  Multiplicative modifiers penalise honeypots (impossible profiles), keyword
+  stuffers, and consulting-only careers, and add a small India-location boost.
+  Output is the top 100 with monotonic scores and specific, non-templated
+  reasoning. Runs CPU-only within the 5-minute ranking budget.
+
+# ============================================================================
+# Declarations
+# ============================================================================
+declarations:
+  read_submission_spec: true
+  code_is_original_work: true
+  no_collusion: true
+  honeypot_check_done: true
+  reproduction_tested: true

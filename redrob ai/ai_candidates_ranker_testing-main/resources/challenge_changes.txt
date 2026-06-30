@@ -1,0 +1,309 @@
+INDIA RUNS CHALLENGE - REQUIRED CHANGES
+
+CURRENT PROJECT
+---------------
+Current Flow:
+
+Job Description
+      ↓
+Resume Upload
+      ↓
+Resume Parser
+      ↓
+Embedding Generation
+      ↓
+FAISS Search
+      ↓
+Cross Encoder
+      ↓
+Final Score
+
+This is designed for:
+1 JD + 1 Resume
+
+The challenge requires:
+1 JD + 100,000 Candidates
+
+
+=========================================================
+STEP 1: REMOVE RESUME UPLOAD DEPENDENCY
+=========================================================
+
+Current Input:
+- Job Description
+- Resume PDF
+
+Change To:
+- Job Description only
+
+Reason:
+Candidate data already exists in candidates.jsonl.
+
+
+=========================================================
+STEP 2: CREATE build_index.py
+=========================================================
+
+Purpose:
+Load all candidates from candidates.jsonl and create
+a searchable FAISS index.
+
+Flow:
+
+candidates.jsonl
+      ↓
+Extract Candidate Text
+      ↓
+Generate Embeddings
+      ↓
+Create FAISS Index
+      ↓
+Save candidate_index.faiss
+      ↓
+Save candidate_map.pkl
+
+Run Once:
+
+python build_index.py
+
+
+Output Files:
+
+candidate_index.faiss
+candidate_map.pkl
+
+
+=========================================================
+STEP 3: CANDIDATE TEXT GENERATION
+=========================================================
+
+For every candidate create text using:
+
+- Skills
+- Projects
+- Experience
+- Education
+- Summary
+
+Example:
+
+Python FAISS LangChain RAG
+
+Built chatbot using Pinecone.
+
+6 years AI Engineer experience.
+
+B.Tech Computer Science.
+
+This text will be embedded.
+
+
+=========================================================
+STEP 4: MODIFY STREAMLIT INPUT
+=========================================================
+
+Current:
+
+Upload Resume
+Paste JD
+
+Change To:
+
+Paste JD
+[Rank Candidates]
+
+No resume upload required.
+
+
+=========================================================
+STEP 5: LOAD FAISS INDEX AT APP STARTUP
+=========================================================
+
+When Streamlit starts:
+
+Load:
+- candidate_index.faiss
+- candidate_map.pkl
+
+Do NOT rebuild every time.
+
+Only load existing files.
+
+
+=========================================================
+STEP 6: SEARCH TOP CANDIDATES
+=========================================================
+
+When JD is submitted:
+
+JD
+ ↓
+Generate JD Embedding
+ ↓
+FAISS Search
+ ↓
+Top 500 Candidates
+
+Do NOT score all 100000 candidates.
+
+
+=========================================================
+STEP 7: SCORE TOP 500 ONLY
+=========================================================
+
+For each candidate calculate:
+
+1. Semantic Similarity Score
+2. Skill Match Score
+3. Experience Score
+4. Project Score
+5. Education Score
+6. Redrob Signal Score
+
+Suggested Weights:
+
+Semantic Similarity = 30%
+Skill Match         = 25%
+Experience          = 20%
+Projects            = 15%
+Education           = 5%
+Redrob Signals      = 5%
+
+
+=========================================================
+STEP 8: EDUCATION SCORING
+=========================================================
+
+Use:
+
+- College Tier
+- Degree
+
+Example:
+
+Tier 1 = 100
+Tier 2 = 80
+Tier 3 = 60
+
+Degree:
+
+CS Degree = Bonus
+AI/ML Degree = Bonus
+
+
+=========================================================
+STEP 9: PROJECT SCORING
+=========================================================
+
+Compare project descriptions against JD.
+
+Examples:
+
+RAG Project
+LLM Project
+Vector Database Project
+Search System Project
+
+should receive higher scores.
+
+
+=========================================================
+STEP 10: REDROB SIGNAL SCORING
+=========================================================
+
+Use challenge-specific signals:
+
+- recruiter_response_rate
+- interview completion
+- activity score
+- assessment score
+
+if available.
+
+Add small bonus.
+
+
+=========================================================
+STEP 11: FINAL RANKING
+=========================================================
+
+Compute:
+
+Final Score =
+Semantic +
+Skills +
+Experience +
+Projects +
+Education +
+Redrob
+
+Sort descending.
+
+Take Top 100.
+
+
+=========================================================
+STEP 12: OUTPUT
+=========================================================
+
+Display:
+
+Rank
+Candidate ID
+Final Score
+Reason
+
+Generate:
+
+submission.csv
+
+
+Format:
+
+candidate_id,rank,score,reason
+
+Example:
+
+C123,1,96.5,
+Strong RAG experience and 7 years in AI systems.
+
+
+=========================================================
+FINAL USER FLOW
+=========================================================
+
+One Time:
+
+python build_index.py
+
+Creates:
+
+candidate_index.faiss
+candidate_map.pkl
+
+Every Time:
+
+Start Streamlit
+      ↓
+Paste Job Description
+      ↓
+Rank Candidates
+      ↓
+Top 100 Candidates
+      ↓
+Download submission.csv
+
+=========================================================
+MOST IMPORTANT CHANGE
+=========================================================
+
+Current Project:
+JD + Resume
+
+Challenge Project:
+JD + Prebuilt Candidate Index
+
+The candidates.jsonl file should NOT be uploaded
+every time through Streamlit.
+
+Build the FAISS index once and reuse it.

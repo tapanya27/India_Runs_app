@@ -1,0 +1,26 @@
+Step 1 — Extract the zip anywhere on their PC.
+
+Step 2 — Install dependencies (only once):
+
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+Step 3 — Start the app:
+
+.\run.bat
+(On Mac/Linux: run the two commands manually)
+
+uvicorn api:app --reload --port 8000 &
+streamlit run app.py
+Step 4 — Open browser:
+
+http://localhost:8501
+Note: First run will download ~180MB of AI models (SBERT + Cross Encoder) automatically. After that it works offline.
+
+OCR support for scanned/image PDFs is enabled when the optional OCR dependencies are installed.
+If a resume PDF contains only images, the app now falls back to OCR instead of returning 0 years of experience.
+If OCR still looks blank, reinstall dependencies so `pypdfium2` and `rapidocr-onnxruntime` are present in the active environment.
+
+Optional quick test (no browser needed):
+
+python sample_data.py
+This ranks 3 sample candidates against a sample ML Engineer job description and prints results in the terminal.

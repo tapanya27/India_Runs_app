@@ -1,0 +1,52 @@
+Senior Machine Learning Engineer – India Runs Technologies
+
+About the Role:
+We are building the next generation of AI-powered talent intelligence at India Runs
+Technologies. We are looking for a Senior Machine Learning Engineer to design, build,
+and ship production-grade ML systems at scale. You will own the full ML lifecycle —
+from data ingestion and model training through to deployment, monitoring, and iteration.
+
+Responsibilities:
+  - Design and implement NLP models for semantic search, document understanding,
+    and information retrieval using Transformers, BERT, and LLM fine-tuning techniques.
+  - Build and maintain RAG (Retrieval-Augmented Generation) pipelines integrating
+    vector databases (FAISS, Elasticsearch) with large language models.
+  - Develop and deploy REST APIs (FastAPI / Flask) to serve ML models in production
+    with low latency and high availability.
+  - Manage end-to-end MLOps pipelines: model versioning, CI/CD, containerisation
+    (Docker, Kubernetes), and cloud deployment (AWS or GCP).
+  - Build robust data pipelines using Apache Spark, Airflow, and Kafka for real-time
+    and batch feature engineering at scale.
+  - Collaborate with the data engineering team on data quality, schema design, and
+    pipeline observability.
+  - Conduct model evaluation, A/B testing, and implement feedback loops to improve
+    model performance over time.
+  - Mentor junior engineers and contribute to internal ML tooling and best practices.
+
+Required Skills and Qualifications:
+  - 4+ years of professional experience in machine learning or applied AI.
+  - Strong Python programming skills (production-quality code, unit testing, code review).
+  - Deep expertise in PyTorch and/or TensorFlow for model development.
+  - Hands-on experience with NLP: Transformers, BERT, GPT, Hugging Face ecosystem,
+    fine-tuning, and prompt engineering.
+  - Experience building semantic search or recommendation systems using FAISS or
+    Elasticsearch.
+  - Proficiency with Docker and Kubernetes for containerised model serving.
+  - Cloud experience on AWS or GCP (SageMaker, EC2, S3, GCS, Vertex AI).
+  - Familiarity with data pipeline tools: Apache Spark, Airflow, or Kafka.
+  - Strong understanding of REST API design with FastAPI or Flask.
+  - Solid foundation in ML fundamentals: loss functions, regularisation, model evaluation,
+    bias-variance trade-off, and statistical testing.
+
+Nice to Have:
+  - Experience with RAG pipelines and LLM orchestration (LangChain, LlamaIndex).
+  - Knowledge of learning-to-rank, semantic search relevance tuning.
+  - MLflow, Weights & Biases, or similar experiment tracking tools.
+  - Contributions to open-source ML projects or published research.
+  - Experience with vector databases beyond FAISS (Pinecone, Weaviate, Qdrant).
+
+What We Offer:
+  - Competitive salary + ESOPs
+  - Flexible remote-first culture
+  - Learning & development budget (conferences, courses, compute credits)
+  - High-impact work on a product used by thousands of recruiters across India

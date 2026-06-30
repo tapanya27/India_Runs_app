@@ -1,0 +1,143 @@
+India Runs Data & AI Challenge changes.txt
+
+Project Improvements
+
+1.  Retrieval Improvements
+
+-   Increased FAISS retrieval pool before final ranking.
+-   Retrieve a larger candidate pool before reranking to improve recall.
+
+2.  Better Resume Embeddings
+
+-   Include role, experience, skills, projects, education, raw resume
+    text, and experience domain.
+
+3.  Improved Skill Extraction
+
+-   Added skill normalization.
+-   Added alias mapping.
+-   Removed duplicate skills.
+-   Improved NLP-based extraction.
+
+4.  Semantic Skill Matching
+
+-   Added Exact Match.
+-   Added Strong Match.
+-   Added Probable Match.
+-   Added Category Match.
+
+5.  Cross Encoder Re-ranking
+
+-   Added cross-encoder reranking after FAISS retrieval.
+-   Improves final ordering of candidates.
+
+6.  Hybrid Candidate Scoring Final score combines:
+
+-   Semantic Similarity
+-   Skill Match
+-   Experience
+-   Project Relevance
+-   Education
+-   Redrob Signals
+
+7.  JD-Aware Skill Weighting
+
+-   Required skills receive higher weight.
+-   Optional skills receive smaller bonus.
+
+8.  Experience Scoring
+
+-   Compare candidate experience with JD requirement.
+-   Penalize under-qualified candidates.
+-   Slight penalty for heavily overqualified candidates.
+
+9.  Project Relevance
+
+-   Score project descriptions against JD using embeddings.
+
+10. Education Scoring
+
+-   Degree
+-   Institution Tier
+-   Field of Study
+
+11. Recruitability Score Uses:
+
+-   Recruiter response rate
+-   Interview completion
+-   GitHub activity
+-   Assessment score
+-   Profile completeness
+-   Open to Work
+-   Recent activity
+
+12. Candidate Quality Filters Penalize:
+
+-   Impossible experience claims
+-   Fake expert skills
+-   Unrealistic skill duration
+-   Keyword stuffing
+
+13. Consulting Company Penalty
+
+-   Slight penalty for consulting-only careers where product experience
+    is preferred.
+
+14. India Location Boost
+
+-   Small boost for candidates located in India.
+
+15. Better Reasoning Generation Include:
+
+-   Matching skills
+-   Experience
+-   Relevant projects
+-   Education
+-   Recruiter signals
+
+16. Better Resume Parsing Improved:
+
+-   OCR support
+-   PDF parsing
+-   Skills
+-   Projects
+-   Education
+-   Experience extraction
+
+17. Score Weight Optimization Current weights: Semantic 30% Skill 25%
+    Experience 20% Projects 15% Education 5% Redrob 5%
+
+Recommended starting point: Semantic 35% Skill 30% Experience 15%
+Projects 10% Education 3% Redrob 7%
+
+18. Better Candidate Text Embedding text includes:
+
+-   Name
+-   Role
+-   Experience
+-   Skills
+-   Projects
+-   Education
+-   Resume Text
+-   Experience Domain
+
+19. Performance Optimizations
+
+-   Batched embeddings
+-   Batched project scoring
+-   Cached models
+-   Faster FAISS search
+
+20. Submission Improvements
+
+-   Correct ranking
+-   Monotonic scores
+-   Better reasoning
+-   Valid CSV format
+
+Final Pipeline
+
+Job Description ↓ Sentence Transformer ↓ FAISS Retrieval ↓ Cross Encoder
+Re-ranking ↓ Skill Matching ↓ Experience Scoring ↓ Project Scoring ↓
+Education Scoring ↓ Recruitability Scoring ↓ Penalty / Bonus Rules ↓
+Final Weighted Score ↓ Top 100 Candidates ↓ submission.csv

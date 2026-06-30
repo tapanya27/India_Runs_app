@@ -1,0 +1,240 @@
+================================================================================
+CODE_CHANGES.txt
+File-by-file log of every code change made to the codebase.
+(Companion to done_changes.txt, which is organized by changes.txt item instead.)
+================================================================================
+
+Scope of work:
+  - Implemented all 20 items in changes.txt + the 12-step build in
+    resources/challenge_changes.txt.
+  - Added an anti keyword-stuffer "role fit" trap defense (the project's core goal).
+  - Fixed 5 defects found by an adversarial code review + 1 Windows-console bug.
+  - Built the full 100k FAISS index and produced a valid submission.csv.
+
+Files MODIFIED : challenge_ranker.py, build_index.py, config.py, embedder.py,
+                 skill_matcher.py, rank.py, app.py
+Files CREATED  : done_changes.txt, CODE_CHANGES.txt, submission_metadata.yaml,
+                 submission.csv, candidate_index.faiss, candidate_map.pkl
+Files NOT changed: ranker.py, scorer.py, explainer.py, faiss_index.py,
+                 resume_parser.py, api.py, sample_data.py, tests/* (legacy
+                 1-JD-1-resume path; left intact).
+
+
+================================================================================
+1) challenge_ranker.py   — the core retrieve -> rerank -> score -> top100 pipeline
+================================================================================
+
+1.1  Module docstring updated: pipeline now lists "cross-encoder rerank"; weights
+     block updated to the optimized values; noted CE rerank + role-fit.
+
+1.2  Scoring weights changed (item 17, "recommended starting point"):
+        W_SEMANTIC    0.30 -> 0.35
+        W_SKILL       0.25 -> 0.30
+        W_EXPERIENCE  0.20 -> 0.15
+        W_PROJECT     0.15 -> 0.10
+        W_EDUCATION   0.05 -> 0.03
+        W_REDROB      0.05 -> 0.07
+
+1.3  New constants for cross-encoder reranking (item 5):
+        USE_CROSS_ENCODER = True
+        CE_BLEND = 0.55      # blend weight: CE prob vs FAISS cosine
+     FAISS_RETRIEVE kept at 700 (item 1: large recall pool); comment clarified.
+
+1.4  New constants for the role-fit / anti-stuffer defense:
+        STRONG_ROLE_TERMS, GOOD_ROLE_TERMS, WEAK_ROLE_TERMS, RELEVANT_WORK_TERMS
+
+1.5  New function _candidate_ce_text(candidate): compact (headline + title +
+     summary + top skills + most-recent role) text for the cross-encoder.
+
+1.6  New function _cross_encoder_rerank(jd, candidates, faiss_scores):
+     runs the cross-encoder over the retrieved pool and returns, per candidate,
+     blended = CE_BLEND*sigmoid(CE) + (1-CE_BLEND)*normalized_faiss_cosine.
+
+1.7  New function _role_fit_multiplier(candidate)  [anti keyword-stuffer trap]:
+     - Classifies the role from current_title + career-history TITLES only
+       (NOT the headline/skills, which the dataset's stuffers deliberately game).
+     - Boosts fit when career-history DESCRIPTIONS show real JD-relevant work.
+     - Extra-demotes "unrelated title + many AI skills + no career evidence".
+     - Returns a multiplier in [~0.30, 1.0].
+
+1.8  rank_candidates_challenge():
+     - Signature gained:  use_cross_encoder: bool = True
+     - Step 1b inserted: min-max normalize FAISS cosines, optionally CE-rerank,
+       then re-normalize the (blended) semantic score to [0.30, 1.0]. (Replaced
+       the old single normalize-only block.)
+     - SemanticSkillMatcher now built with use_cross_encoder_validation=False
+       (avoids hundreds of per-candidate CE calls in the rank loop).
+     - role_mult = _role_fit_multiplier(candidate) added to the modifier chain:
+         final = raw * honeypot_mult * consult_mult * role_mult * india_mult
+     - role_mult added to the per-candidate all_scores dict.
+
+1.9  _score_skills_jd_aware(): defensive read
+        [s["name"] for s in skill_info]  ->  [s.get("name") for s in skill_info if s.get("name")]
+        (+ early return if none).
+
+1.10 _build_reasoning():
+     - Added `company` from profile.current_company.
+     - Added a "relevant work at <company>: ..." clause from JD-relevant terms
+       actually present in career descriptions (item 15); else "currently at ...".
+     - Removed the duplicated local RELEVANT_WORK_TERMS (now module-level).
+     - Added an honest gap: "role/title not aligned with an AI-engineering JD"
+       when role_mult is low and there is no relevant career evidence.
+
+1.11 TIE-BREAK BUG FIX (found by review, HIGH):
+     Old Step 5 sorted with key=(final_score, candidate_id), reverse=True (ties
+     by candidate_id DESCENDING) and sliced top_k BEFORE re-sorting, so a tie
+     straddling rank 100 admitted the largest candidate_id instead of the
+     smallest (spec requires ascending).
+     New: a single canonical sort BEFORE slicing -
+        scored.sort(key=lambda x: (-x["final_score"], x["candidate_id"]))
+        top = scored[:top_k]
+     Membership AND ordering now match the spec at the boundary. Removed the
+     redundant second sort.
+
+
+================================================================================
+2) build_index.py   — one-time FAISS index build from candidates.jsonl
+================================================================================
+
+2.1  Added `import os`, `import sys` and a UTF-8 stdout/stderr reconfigure block
+     (so a direct run never crashes on emoji prints on Windows cp1252 consoles).
+
+2.2  Model/dimension now imported from config (removed the local hardcoded
+     SBERT_MODEL="all-mpnet-base-v2" and EMBEDDING_DIM=768) so index/embedder/
+     ranker can never drift apart.
+
+2.3  Added MAX_TEXT_CHARS = 1100 (caps the embedded candidate text length —
+     item 19 performance; the cross-encoder reads the fuller profile later).
+
+2.4  build_candidate_text() enriched (items 2 / 18):
+     - Added "Name: <anonymized_name>".
+     - Added "Experience Domain: <current_industry + recent role industries>".
+     - Tightened per-field caps: summary 600->300, career_history [:5]->[:3],
+       per-role description 350->250 chars.
+     - Final return capped to [:MAX_TEXT_CHARS].
+
+2.5  main(): added torch.set_num_threads(os.cpu_count()) for all-core encoding
+     (item 19); cleaned messages.
+
+2.6  Removed dead/misleading code: the large commented-out DEBUG blocks, the
+     verbose per-run stats dump, and the false comment "won't execute because of
+     the return above" (there was no such return).
+
+
+================================================================================
+3) config.py   — models, dimensions, skill aliases/taxonomy
+================================================================================
+
+3.1  SBERT_MODEL:        "all-mpnet-base-v2"  ->  "all-MiniLM-L6-v2"
+     Reason: all-mpnet-base-v2 measured ~1.4 texts/sec on this CPU (~20 h for the
+     100k build) — infeasible and against the spec's CPU-only / 5-minute intent.
+     MiniLM is the "compact local model" the spec recommends (~15x faster).
+
+3.2  CROSS_ENCODER_MODEL: "cross-encoder/ms-marco-MiniLM-L-12-v2"
+                       -> "cross-encoder/ms-marco-MiniLM-L-6-v2"   (faster).
+
+3.3  EMBEDDING_DIM:      768 -> 384   (all-MiniLM-L6-v2 output dimension).
+
+3.4  Removed the SKILL_ALIASES entry  "cv": "computer vision"  (review, LOW):
+     "cv" is ambiguous ("curriculum vitae") and the JD's disqualifier line
+     ("...only CV, speech, or robotics...") was injecting "computer vision" into
+     the JD skill set. Added a comment explaining the deliberate omission.
+
+
+================================================================================
+4) embedder.py   — shared SBERT model loader
+================================================================================
+
+4.1  Added `import os`.
+4.2  get_model(): sets torch.set_num_threads(os.cpu_count()) on first load, so
+     every caller (ranker + Streamlit app) uses all CPU cores (item 19).
+
+
+================================================================================
+5) skill_matcher.py   — multi-layer semantic skill matching
+================================================================================
+
+5.1  SemanticSkillMatcher.__init__ gained parameter
+        use_cross_encoder_validation: bool = True   (stored as self.use_ce_validation)
+5.2  Layer-4 cross-encoder validation block guarded:
+        if probable_indices and self.use_ce_validation:
+     The challenge ranker passes False, removing hundreds of unbatched per-
+     candidate CE calls from the 5-minute ranking budget (review, HIGH/perf).
+     Legacy callers default to True (unchanged behavior).
+
+
+================================================================================
+6) rank.py   — CLI that produces submission.csv (the reproduce command)
+================================================================================
+
+6.1  Added a UTF-8 stdout/stderr reconfigure block at import (review, Windows
+     cp1252 crash: the "checkmark Submission valid" print crashed AFTER writing a
+     valid CSV, making the reproduce command exit non-zero on Windows).
+
+6.2  Added CLI flag  --no-cross-encoder  (disable CE rerank for a faster run).
+
+6.3  Passes use_cross_encoder through to rank_candidates_challenge; prints
+     "cross-encoder=on/off".
+
+6.4  Fewer-than-top_k results: WARNING -> hard error with sys.exit(1) (review,
+     LOW) so an invalid (<100-row) CSV is never written.
+
+
+================================================================================
+7) app.py   — Streamlit UI (paste JD -> top 100 + submission.csv)
+================================================================================
+
+7.1  Header caption now shows the "cross-encoder rerank" stage.
+7.2  Added a sidebar "Cross-encoder rerank" checkbox (default on).
+7.3  Sidebar scoring-weights table updated to 35 / 30 / 15 / 10 / 3 / 7 %.
+7.4  Rank call passes use_cross_encoder from the new checkbox.
+     (The app already required JD-only input and cached the prebuilt index at
+     startup — challenge_changes.txt STEPs 1/4/5 — so those were left as-is.)
+
+
+================================================================================
+8) NEW FILES
+================================================================================
+
+  done_changes.txt        Status of every changes.txt item + challenge step,
+                          the post-review fixes, and build/submission results.
+  CODE_CHANGES.txt        This file.
+  submission_metadata.yaml Spec-required portal metadata (fill in team name/repo).
+  submission.csv          Final top-100 ranking over the full 100k pool.
+                          Official validator -> "Submission is valid."
+  candidate_index.faiss   Prebuilt FAISS index (100,000 vectors, dim 384).
+  candidate_map.pkl       Candidate records aligned with the index order.
+
+
+================================================================================
+8b) FOLLOW-UP FIX — unified job description across CLI and UI
+================================================================================
+
+Symptom: the Streamlit output and the CLI submission.csv disagreed (~33% overlap)
+because app.py and rank.py each defined their OWN, different DEFAULT_JD (838 vs
+1418 chars) -> different JD embedding -> different ranking.
+
+Fix (single source of truth):
+  - challenge_ranker.py: added the canonical DEFAULT_JD constant.
+  - rank.py: now imports DEFAULT_JD from challenge_ranker (removed its own copy).
+  - app.py:  now imports DEFAULT_JD from challenge_ranker (removed its own copy).
+Result: the UI and the CLI rank against the identical JD and produce identical
+top-100 output. (No index rebuild needed — the JD only affects query time.)
+
+
+================================================================================
+9) VERIFICATION SUMMARY
+================================================================================
+
+  - All edited .py files: py_compile OK.
+  - Adversarial multi-agent review run on the changes; all confirmed real
+    defects fixed (tie-break, per-candidate CE in skill matching, fail-fast on
+    <100 results, defensive s.get("name"), the "cv" alias, Windows print crash).
+  - Full pipeline run end-to-end on the full 100,000-candidate index:
+        python rank.py --out submission.csv   ->  exit 0
+        "Submission valid - all checks passed."
+        ranking step ~145s wall-clock (incl. index load)  <  300s budget.
+  - resources/validate_submission.py submission.csv  ->  "Submission is valid."
+  - Top ranks are genuine Senior ML/NLP/AI engineers at product companies with
+    real RAG/retrieval/reranking career evidence — no keyword-stuffers or
+    unrelated titles; scores monotonic (0.8127 -> 0.4755).

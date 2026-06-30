@@ -1,0 +1,40 @@
+name,resume_text,skills,experience_years,experience_domain,education,projects
+Arjun Sharma,"Senior ML Engineer with 6 years of experience specialising in NLP and large language models. Deployed models to production on AWS using Docker and Kubernetes. 6+ years experience in machine learning.
+Built BERT-based document retrieval system reducing query latency by 40%.
+Built RAG pipeline serving 10M queries/day on AWS Kubernetes cluster.
+Implemented CI/CD for ML models using Docker and GitHub Actions.
+Trained and fine-tuned LLMs on proprietary datasets achieving 18% accuracy improvement.
+Designed Spark and Airflow data pipeline processing 5TB per day at Amazon scale.
+Experience at TechCorp India 2018 to 2024.","python,pytorch,tensorflow,bert,llm,rag,faiss,elasticsearch,fastapi,docker,kubernetes,aws,spark,airflow,scikit-learn,huggingface,nlp,transformers,ci/cd",6,machine learning,B.Tech Computer Science IIT Bombay,
+Priya Nair,"Machine Learning Engineer with 4 years experience in computer vision and NLP. Deployed REST APIs using FastAPI on GCP with Docker. 4+ years experience in machine learning.
+Implemented object detection models using PyTorch and TensorFlow for production surveillance system.
+Built text classification pipelines using BERT and fine-tuned GPT models for sentiment analysis.
+Developed real-time inference service on GCP with Docker and Kubernetes handling 1M daily requests.
+Worked with Kafka for real-time data streaming and Elasticsearch for search.
+Experience at Infosys AI Lab 2020 to 2024.","python,pytorch,tensorflow,bert,gpt,fastapi,docker,gcp,kafka,computer vision,nlp,scikit-learn,huggingface,rest api,kubernetes",4,machine learning,M.Tech Artificial Intelligence NIT Trichy,
+Amit Desai,"NLP Research Engineer with 5 years experience. Published 3 papers on transformer architectures at ACL and EMNLP conferences. Senior research engineer at Google Research India. 5+ years research experience.
+Built semantic search system using FAISS and vector databases serving 2M enterprise users.
+Implemented RAG pipeline for enterprise knowledge base with LLM orchestration.
+Fine-tuned BERT and GPT models on domain-specific datasets improving benchmark scores by 22%.
+Developed distributed training pipeline for large language models on Kubernetes cluster.
+Open source contributor to Hugging Face transformers library with 500+ GitHub stars.
+Experience at Google Research India 2019 to 2024.","python,pytorch,bert,gpt,huggingface,faiss,rag,nlp,transformers,llm,kubernetes,docker,semantic search,fine-tuning,elasticsearch",5,machine learning,PhD Natural Language Processing IISc Bangalore,
+Rohit Verma,"Data Engineer with 5 years of experience building large-scale data pipelines. Expert in Apache Spark Airflow and Kafka. Built ETL pipelines on AWS and Azure. Strong SQL and Python skills. 5 years at Amazon Data 2019 to 2024.
+Built real-time streaming pipeline using Kafka and Spark processing 5TB per day at Amazon.
+Designed and deployed ETL infrastructure on AWS with Airflow orchestration for 50+ data sources.
+Implemented Elasticsearch search infrastructure serving 100M queries per month.
+Built dbt data transformation pipelines reducing data latency from hours to minutes.","python,sql,spark,airflow,kafka,aws,azure,elasticsearch,docker,postgresql,dbt,git",5,data engineering,B.Tech Information Technology VIT,
+Sneha Kulkarni,"Full Stack Developer with 3 years experience in React and Node.js. Built REST APIs using FastAPI and Django. Deployed applications on AWS. 3 years experience at Wipro 2021 to 2024.
+Built scalable REST API backend using FastAPI serving 50K daily active users on AWS EC2.
+Developed React dashboard for real-time data visualization with WebSocket integration.
+Implemented CI/CD pipeline with Docker and GitHub Actions reducing deployment time by 60%.","python,react,node.js,fastapi,django,rest api,docker,aws,git,sql,javascript,css,html",3,backend,B.Tech Computer Engineering Pune University,
+Rahul Mehta,"Junior Data Scientist with 2 years experience. Worked on tabular ML problems with scikit-learn and XGBoost. Built dashboards using Matplotlib and Streamlit. 2 years at Razorpay Analytics 2022 to 2024.
+Built customer churn prediction model using XGBoost with 87% accuracy for Razorpay.
+Developed Streamlit dashboard for real-time analytics monitoring used by 50+ analysts.","python,scikit-learn,pandas,numpy,sql,matplotlib,streamlit,machine learning",2,data science,M.Sc Statistics Delhi University,
+Kavya Reddy,"DevOps Engineer with 4 years experience. Expert in Kubernetes Docker and CI/CD pipelines. Managed AWS and GCP infrastructure with Terraform. 4 years at Accenture Cloud 2020 to 2024.
+Managed Kubernetes cluster of 200+ microservices on AWS EKS for Fortune 500 client.
+Built CI/CD pipeline infrastructure using Jenkins and GitHub Actions for 30+ development teams.
+Automated cloud infrastructure provisioning with Terraform reducing setup time by 80%.","docker,kubernetes,aws,gcp,terraform,ci/cd,linux,git,ansible,jenkins,azure",4,devops / cloud,B.E. Electronics Osmania University,
+Divya Sharma,"UI/UX Designer with 3 years experience. No programming background. Designed wireframes and prototypes in Figma and Adobe XD. Conducted user research and usability testing. 3 years at DesignHub 2021 to 2024.
+Designed complete mobile app UI for e-commerce platform with 100K downloads.
+Created brand identity system for 15 startups including logo typography and design tokens.","figma,adobe xd,html,css,sketch,canva",3,frontend,B.Des Visual Communication NID Ahmedabad,

@@ -1,0 +1,245 @@
+================================================================================
+DONE CHANGES — India Runs Data & AI Challenge
+Status report for every change listed in changes.txt (+ challenge_changes.txt)
+Generated after scanning the resources/ folder and implementing the build.
+================================================================================
+
+LEGEND
+  [DONE]            Implemented and verified end-to-end on a 3,000-candidate
+                    subset (full pipeline ran, CSV passed the official
+                    resources/validate_submission.py, scores monotonic,
+                    ranking step well within the 5-minute CPU budget).
+  [DONE/PRE-EXISTING] Capability already present in the codebase and confirmed.
+
+KEY FILES
+  build_index.py        One-time build of the FAISS index over candidates.jsonl
+  challenge_ranker.py   The retrieval + rerank + 6-component scoring pipeline
+  rank.py               CLI that produces submission.csv (reproduce command)
+  app.py                Streamlit UI (JD in -> top 100 + submission.csv)
+  config.py             Models, dims, skill aliases/taxonomy, thresholds
+  embedder.py / skill_matcher.py / cross_encoder_reranker.py / resume_parser.py
+
+
+================================================================================
+PART A — changes.txt (20 project improvements)
+================================================================================
+
+1. Retrieval Improvements ...................................... [DONE]
+   - FAISS retrieves a LARGE pool (700) before final ranking for recall.
+   - challenge_ranker.py: FAISS_RETRIEVE = 700; rank.py/app.py expose --retrieve-k.
+
+2. Better Resume / Candidate Embeddings ....................... [DONE]
+   - Embedded candidate text now includes role, experience, skills, projects
+     (career descriptions), education, raw summary text, AND experience domain.
+   - build_index.py: build_candidate_text() — added Name + "Experience Domain"
+     (current_industry + recent role industries). See also item 18.
+
+3. Improved Skill Extraction .................................. [DONE]
+   - Normalization (resume_parser.normalize_skill / normalize_skill_list),
+     alias mapping (config.SKILL_ALIASES), duplicate removal (dedup in
+     normalize_skill_list), and NLP-based extraction (spaCy noun chunks in
+     resume_parser.extract_skills).
+
+4. Semantic Skill Matching ................................... [DONE]
+   - skill_matcher.SemanticSkillMatcher produces Exact / Strong / Probable /
+     Category matches (+ cross-encoder validation of borderline matches).
+
+5. Cross Encoder Re-ranking .................................. [DONE]
+   - WAS MISSING from the challenge pipeline (the reranker existed but was never
+     called). Now wired in: challenge_ranker._cross_encoder_rerank() reranks the
+     FAISS pool and blends CE probability with the FAISS cosine (CE_BLEND=0.55).
+   - Toggle: rank.py --no-cross-encoder ; app.py "Cross-encoder rerank" checkbox.
+
+6. Hybrid Candidate Scoring .................................. [DONE]
+   - Final score combines all six: Semantic, Skill, Experience, Project,
+     Education, Redrob signals (challenge_ranker.rank_candidates_challenge).
+
+7. JD-Aware Skill Weighting ................................. [DONE]
+   - challenge_ranker._score_skills_jd_aware: required JD skills weighted higher
+     (required_bonus up to +0.20), nice-to-have a smaller bonus (up to +0.10).
+
+8. Experience Scoring ....................................... [DONE]
+   - _score_experience: parses JD 5-9 year band, penalizes under-qualified,
+     slight penalty for heavily overqualified.
+
+9. Project Relevance ........................................ [DONE]
+   - _score_projects_batch: embeds candidate career/project descriptions and
+     scores them against the JD embedding (batched).
+
+10. Education Scoring ....................................... [DONE]
+    - _score_education: institution tier + degree level bonus + field-of-study
+      relevance.
+
+11. Recruitability / Redrob Score .......................... [DONE]
+    - _score_redrob_comprehensive uses all 23 signals incl. recruiter response
+      rate, interview completion, GitHub activity, assessment scores, profile
+      completeness, open-to-work, and recency of last activity.
+
+12. Candidate Quality Filters .............................. [DONE]
+    - _honeypot_penalty penalizes impossible experience claims, fake "expert"
+      skills (expert + 0 months), unrealistic skill durations, and keyword
+      stuffing (10+ expert skills).
+    - STRENGTHENED: added _role_fit_multiplier (see "Extra" below) — the
+      decisive filter against role-mismatch keyword stuffers (e.g. an "HR
+      Manager"/"Civil Engineer" who lists FAISS/embeddings as skills).
+
+13. Consulting Company Penalty ............................. [DONE]
+    - _consulting_penalty: penalizes near-total careers at TCS/Infosys/Wipro/
+      Accenture/Cognizant/HCL/Capgemini/etc. (per JD disqualifiers).
+
+14. India Location Boost ................................... [DONE]
+    - _india_boost: small 1.04x boost for India / Pune / Noida candidates.
+
+15. Better Reasoning Generation ............................ [DONE]
+    - _build_reasoning now includes matched skills, experience (title+years+
+      location), relevant project/career work, education, recruiter signals,
+      and honest gaps (incl. role-misalignment when applicable). Non-templated.
+
+16. Better Resume Parsing ................................. [DONE/PRE-EXISTING]
+    - resume_parser.py provides OCR (pypdfium2 / rapidocr / pytesseract),
+      PDF parsing (PyPDF2 / pdfplumber), and skills/projects/education/
+      experience extraction. (Used by the legacy 1-JD-1-resume path; the
+      challenge path reads candidates.jsonl directly.)
+
+17. Score Weight Optimization ............................. [DONE]
+    - Applied the recommended weights from changes.txt item 17:
+        Semantic 35% | Skill 30% | Experience 15% | Projects 10% |
+        Education 3% | Redrob 7%
+    - challenge_ranker.py W_* constants; reflected in app.py sidebar.
+
+18. Better Candidate Text Embedding ....................... [DONE]
+    - build_candidate_text emits: Name, Role, Experience, Experience Domain,
+      Skills, Summary (resume text), Certifications, Career/Projects, Education,
+      Platform signals. (Same change as item 2.)
+
+19. Performance Optimizations ............................. [DONE]
+    - Batched embeddings (build_index + _score_projects_batch), cached models
+      (embedder.get_model singleton + skill/taxonomy embedding caches), all-CPU
+      threading (torch.set_num_threads = cpu_count in embedder + build_index),
+      compact candidate text (MAX_TEXT_CHARS) and compact local models for a
+      fast FAISS search. Removed dead debug code from build_index.py.
+
+20. Submission Improvements .............................. [DONE]
+    - Correct ranking (sorted desc, ranks 1..100), monotonic non-increasing
+      scores (clamp loop + candidate_id ascending tie-break), better reasoning,
+      valid CSV (header candidate_id,rank,score,reasoning; verified by
+      resources/validate_submission.py -> "Submission is valid.").
+
+
+================================================================================
+PART B — challenge_changes.txt (12-step challenge build)
+================================================================================
+
+STEP 1  Remove resume-upload dependency .................... [DONE]
+        app.py takes JD only; candidate data comes from candidates.jsonl.
+STEP 2  Create build_index.py ............................. [DONE]
+        Builds candidate_index.faiss + candidate_map.pkl from the JSONL.
+STEP 3  Candidate text generation ......................... [DONE]
+        build_candidate_text() over skills/projects/experience/education/summary.
+STEP 4  Modify Streamlit input ............................ [DONE]
+        "Paste JD -> Rank Candidates"; no resume upload.
+STEP 5  Load FAISS index at app startup ................... [DONE]
+        app.py @st.cache_resource loads the prebuilt index once (no rebuild).
+STEP 6  Search top candidates (not all 100k) .............. [DONE]
+        FAISS retrieves top 700 (>= the 500 the step suggests).
+STEP 7  Score the retrieved pool only ..................... [DONE]
+        6-component scoring runs only on the retrieved candidates.
+STEP 8  Education scoring (tier + degree) ................. [DONE]  (item 10)
+STEP 9  Project scoring vs JD ............................. [DONE]  (item 9)
+STEP 10 Redrob signal scoring ............................. [DONE]  (item 11)
+STEP 11 Final ranking -> top 100 ......................... [DONE]  (item 6/20)
+STEP 12 Output (display + submission.csv) ................. [DONE]
+        rank.py writes submission.csv; app.py shows table + download button.
+
+
+================================================================================
+EXTRA — improvements made to meet the project's actual GOAL (resources/)
+================================================================================
+
+* Anti keyword-stuffer trap (the core thing the challenge tests):
+  _role_fit_multiplier in challenge_ranker.py. The JD states that a candidate
+  with all the AI keywords but an unrelated title ("Marketing Manager") is NOT a
+  fit. Role is classified from current_title + career-history titles ONLY (the
+  headline and skills list are gameable and are deliberately stuffed in the
+  dataset). Real career-history evidence can lift an off-title candidate. Effect
+  on the 3,000-candidate test: unrelated-title candidates in the top 20 dropped
+  from 8 to 0; the top ranks became AI Specialist / ML Engineer / Data Scientist
+  / AI Research Engineer / Senior SWE (ML), all in the JD's 5-9 year band.
+
+* Model choice (performance / compute constraint): switched the embedder to the
+  compact local model all-MiniLM-L6-v2 (384-dim) and the reranker to
+  ms-marco-MiniLM-L-6-v2. Rationale: all-mpnet-base-v2 measured ~1.4 texts/sec
+  on this CPU (~20 hours for the 100k build) which is infeasible and violates the
+  spec's CPU-only / 5-minute intent. MiniLM is exactly the "compact local model"
+  the submission spec recommends. config.py EMBEDDING_DIM updated to 384;
+  build_index.py imports the model/dim from config so they never drift.
+
+* submission_metadata.yaml created at repo root from the provided template
+  (submission_spec.md Section 10 requires it).
+
+
+================================================================================
+POST-REVIEW FIXES (from an adversarial multi-agent code review of the changes)
+================================================================================
+
+A multi-agent review (4 lenses: correctness / edge-cases / performance /
+consistency, each finding adversarially verified) was run on the modified code.
+Confirmed real defects were fixed:
+
+[FIXED, HIGH] Boundary tie-break admitted the wrong candidate at the top-100
+   cutoff. The pool was sorted with reverse=True (candidate_id DESCENDING within
+   tied scores) and sliced BEFORE re-sorting, so a tie straddling rank 100 kept
+   the largest candidate_id instead of the smallest (spec requires ascending).
+   Fix: single sort key=(-final_score, candidate_id) applied BEFORE slicing, so
+   both membership and ordering match the spec. (challenge_ranker.py Step 5/6)
+
+[FIXED, HIGH/PERF] skill_matcher Layer-4 ran an unbatched cross-encoder predict()
+   per retrieved candidate (~hundreds of model calls inside the rank loop).
+   Fix: SemanticSkillMatcher gained use_cross_encoder_validation; the challenge
+   ranker constructs it with that OFF (the SBERT probable-match threshold already
+   gates these). Adds margin to the 5-minute budget. (skill_matcher.py,
+   challenge_ranker.py). The end-to-end ranking step is measured ~140s (< 300s).
+
+[FIXED, LOW] rank.py now fails fast (exit 1) if fewer than top_k results are
+   produced, instead of writing an invalid (<100-row) CSV.
+
+[FIXED, LOW] _score_skills_jd_aware used s["name"] subscript on optional keys;
+   now uses s.get("name") with a guard.
+
+[FIXED, LOW] Removed the ambiguous "cv" -> "computer vision" skill alias: the
+   JD's disqualifier line ("...only CV, speech, or robotics...") was injecting
+   "computer vision" into the JD skill set. (config.py)
+
+
+================================================================================
+BUILD & SUBMISSION STATUS
+================================================================================
+
+Full 100,000-candidate FAISS index:  BUILT  [DONE]
+  - candidate_index.faiss  = 100,000 vectors (153.6 MB, dim 384)
+  - candidate_map.pkl      = 100,000 candidate records (417 MB)
+  - Built with a resumable chunked builder (5k/chunk) since the one-shot build
+    exceeds the background ~50-min reap window; every chunk is checkpointed so
+    interrupted runs resume with no lost work.
+
+Final submission.csv over the FULL 100,000-candidate pool:  PRODUCED  [DONE]
+  - python resources/validate_submission.py submission.csv  ->  "Submission is valid."
+  - Exactly 100 rows; ranks 1..100 unique; unique CAND_ ids; scores
+    non-increasing (0.8127 -> 0.4755); ties broken by candidate_id ascending.
+  - Ranking step (incl. index load): ~145s wall-clock  ->  PASS (budget 300s).
+  - Top candidates are genuine Senior ML/NLP/AI Engineers at product companies
+    (Flipkart, Netflix, Salesforce, Meta, CRED, PhonePe) with real RAG /
+    retrieval / reranking career evidence and strong recruiter signals — no
+    keyword-stuffers or unrelated titles in the top ranks; a Noida-based
+    candidate surfaced at #6. Reasoning is specific and non-templated.
+
+[FIXED] Windows cp1252 console crash: rank.py / build_index.py print status
+  emojis (checkmark, arrows) that crash on Windows consoles AFTER writing a
+  valid CSV. Forced UTF-8 stdout/stderr so the reproduce command exits cleanly.
+
+Reproduce:
+  python build_index.py                                  # one-time precompute (~90 min CPU)
+  python rank.py --out submission.csv                    # ~2.5 min; writes + validates
+  python resources/validate_submission.py submission.csv # -> "Submission is valid."
+Or run the UI:
+  streamlit run app.py

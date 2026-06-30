@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -c ' *)",
+      "Bash(python \"C:/Users/vaibhavi.pande/AppData/Local/Temp/claude/C--Users-vaibhavi-pande-Desktop-redrob-ai-ai-candidates-ranker-testing-main/b07c3918-10fc-46da-9732-70684369576b/scratchpad/stage_breakdown.py\")"
+    ]
+  }
+}
